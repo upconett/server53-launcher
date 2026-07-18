@@ -10,3 +10,12 @@ build
 
 # Ignore MacOS garbage
 .DS_Store
+
+
+# Ignore folders for testing
+bullshit/
+minecraft-maybe-required-data/
+
+
+# Ignore logs
+logs

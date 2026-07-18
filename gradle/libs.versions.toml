@@ -4,7 +4,11 @@
 [versions]
 guava = "33.4.6-jre"
 junit = "4.13.2"
+json = "20260522"
+commonsText = "1.15.0"
 
 [libraries]
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 junit = { module = "junit:junit", version.ref = "junit" }
+json = { module = "org.json:json", version.ref = "json" }
+commonsText = { group = "org.apache.commons", name = "commons-text", version.ref = "commonsText" }
