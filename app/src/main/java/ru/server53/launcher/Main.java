@@ -2,10 +2,10 @@ package ru.server53.launcher;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.UUID;
 
 import ru.server53.launcher.clientjson.ClientJson;
 import ru.server53.launcher.clientjson.ClientJsonParser;
+import ru.server53.launcher.downloads.DownloadManager;
 
 public class Main {
     private final static String NeoForge_1_21_1_ClientJsonPath = "/Users/upco/Documents/projects/minecraft/Server53Launcher/minecraft-maybe-required-data/versions/NeoForge 1.21.1/NeoForge 1.21.1.json";
@@ -22,7 +22,11 @@ public class Main {
         Path clientJsonPath = Paths.get(NeoForge_1_21_1_ClientJsonPath);
         ClientJsonParser parser = new ClientJsonParser(clientJsonPath);
         ClientJson clientJson = parser.parse();
-        System.out.println(clientJson);
+        DownloadManager downloadManager = new DownloadManager(clientJson);
+
+        Path newGamePath = Paths.get("newGame");
+
+        downloadManager.downloadGameTo(newGamePath);
     }
 
     // protected static void oldCrap() throws Exception {

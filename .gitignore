@@ -15,6 +15,7 @@ build
 # Ignore folders for testing
 bullshit/
 minecraft-maybe-required-data/
+newGame/
 
 
 # Ignore logs

@@ -33,7 +33,7 @@ public class ClientJsonParser {
         String mainClass = rawClientJson.getString("mainClass");
         String assets = rawClientJson.getString("assets");
 
-        AssetIndex assetIndex = parseAssetIndex();
+        AssetIndexInfo assetIndex = parseAssetIndex();
         LibraryInfo[] libraries = parseLibraries();
         Map<String, DownloadInfo> downloads = parseDownloads();
 
@@ -62,7 +62,7 @@ public class ClientJsonParser {
         );
     }
 
-    private AssetIndex parseAssetIndex() throws URISyntaxException {
+    private AssetIndexInfo parseAssetIndex() throws URISyntaxException {
         JSONObject rawAssetIndex = rawClientJson.getJSONObject("assetIndex");
         String id = rawAssetIndex.getString("id");
         Long totalSize = rawAssetIndex.getLong("totalSize");
@@ -70,7 +70,7 @@ public class ClientJsonParser {
         String url = rawAssetIndex.getString("url");
         String sha1 = rawAssetIndex.getString("sha1");
         Long size = rawAssetIndex.getLong("size");
-        return new AssetIndex(id, totalSize, known, url, sha1, size);
+        return new AssetIndexInfo(id, totalSize, known, url, sha1, size);
     }
 
 

@@ -2,13 +2,13 @@ package ru.server53.launcher.clientjson;
 
 import java.net.URISyntaxException;
 
-public class AssetIndex {
+public class AssetIndexInfo {
     public final String id;
     public final Long totalSize;
     public final Boolean known;
     public final DownloadInfo download;
 
-    public AssetIndex(
+    public AssetIndexInfo(
         String id,
         Long totalSize,
         Boolean known,

@@ -8,7 +8,7 @@ public record ClientJson(
     LibraryInfo[] libraries,
     Map<String, DownloadInfo> downloads,
     String assets,
-    AssetIndex assetIndex,
+    AssetIndexInfo assetIndex,
     LaunchArgument[] argumentsJVM,
     LaunchArgument[] argumentsGame,
     String javaVersionComponent,
