@@ -24,7 +24,7 @@ public class Main {
         ClientJson clientJson = parser.parse();
         DownloadManager downloadManager = new DownloadManager(clientJson);
 
-        Path newGamePath = Paths.get("newGame");
+        Path newGamePath = Paths.get("fastGame");
 
         downloadManager.downloadGameTo(newGamePath);
     }
