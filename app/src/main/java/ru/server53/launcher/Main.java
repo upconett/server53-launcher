@@ -5,6 +5,7 @@ import java.nio.file.Paths;
 
 import ru.server53.launcher.clientjson.ClientJson;
 import ru.server53.launcher.clientjson.ClientJsonParser;
+import ru.server53.launcher.downloads.AssetDownloader;
 import ru.server53.launcher.downloads.DownloadManager;
 
 public class Main {
@@ -22,11 +23,13 @@ public class Main {
         Path clientJsonPath = Paths.get(NeoForge_1_21_1_ClientJsonPath);
         ClientJsonParser parser = new ClientJsonParser(clientJsonPath);
         ClientJson clientJson = parser.parse();
-        DownloadManager downloadManager = new DownloadManager(clientJson);
+
+        DownloadManager downloadManager = DownloadManager.ofDefaultConfiguration();
+        AssetDownloader assetDownloader = new AssetDownloader(clientJson, downloadManager);
 
         Path newGamePath = Paths.get("fastGame");
 
-        downloadManager.downloadGameTo(newGamePath);
+        assetDownloader.downloadGameTo(newGamePath);
     }
 
     // protected static void oldCrap() throws Exception {
