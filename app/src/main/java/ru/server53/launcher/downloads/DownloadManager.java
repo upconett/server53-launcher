@@ -11,6 +11,7 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -38,6 +39,7 @@ public class DownloadManager {
     ) {
         this.clientJson = clientJson;
         this.httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
             .build();
     }
 
@@ -117,47 +119,62 @@ public class DownloadManager {
         int attempt,
         DownloadCounter downloadedCounter
     ) throws IOException, URISyntaxException, InterruptedException {
+
+        if (attempt >= MAX_RETRIES) {
+            System.out.println("Reached MAX_RETRIES");
+            return CompletableFuture.failedFuture(new RuntimeException("Hit MAX_RETRIES"));
+        }
+
         String assetSubdirectory = assetInfo.hash().substring(0, 2);
         Path assetSubdirectoryPath = assetsObjectsDirectoryPath.resolve(assetSubdirectory);
         Path assetPath = assetSubdirectoryPath.resolve(assetInfo.hash());
 
         Files.createDirectories(assetSubdirectoryPath);
+        Files.deleteIfExists(assetPath);
 
         String assetURLPath = "%s/%s".formatted(assetSubdirectory, assetInfo.hash());
-        URI downloadURL = new URI(ASSETS_DOWNLOAD_URL).resolve(assetURLPath);
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(downloadURL)
-            .GET()
+        URI downloadURI = new URI(ASSETS_DOWNLOAD_URL).resolve(assetURLPath);
+        HttpRequest request = HttpRequest.newBuilder(downloadURI)
+            .timeout(Duration.ofSeconds(30))
             .build();
 
         semaphore.acquire();
-        System.out.println("Downloading asset '%s'".formatted(assetInfo.hash()));
         return httpClient.sendAsync(request, BodyHandlers.ofFile(assetPath))
-            .whenComplete((r,e) -> semaphore.release())
-            .thenCompose(response -> {
+            .whenComplete((response, exception) -> {
+                semaphore.release();
+            })
+            .thenCompose((response) -> {
                 try {
-                    if (response.statusCode() == 200 && 
-                        Files.size(assetPath) == assetInfo.size()) {
+                    if (response.statusCode() == 200
+                        && Files.size(assetPath) == assetInfo.size()
+                    ) {
                         downloadedCounter.increment();
-                        System.out.println("✅ [%d/%d] Done asset '%s'".formatted(
-                            downloadedCounter.getCurrent(),
-                            downloadedCounter.getTotal(),
-                            assetInfo.hash()
-                        ));
+                        System.out.println("%d/%d, %s".formatted(downloadedCounter.getCurrent(), downloadedCounter.getTotal(), response.toString()));
                         return CompletableFuture.completedFuture(response);
-                    } else if (attempt < MAX_RETRIES) {
-                        Files.deleteIfExists(assetPath); // Clean up partial file
-                        System.out.println("Retrying " + assetInfo.hash() + " (attempt " + (attempt+1) + ")");
-                        return downloadAssetWithRetry(assetInfo, assetsObjectsDirectoryPath, attempt + 1, downloadedCounter);
                     } else {
-                        throw new RuntimeException("Failed after " + MAX_RETRIES + " attempts: " + assetInfo.hash());
+                        System.out.println("Invalid file size");
+                        return CompletableFuture.failedFuture(new Exception("Invalid File Size"));
                     }
                 } catch (Exception e) {
+                    System.out.println("Exception %s".formatted(e.toString()));
+                    return CompletableFuture.failedFuture(e);
+                }
+            })
+            .exceptionallyCompose((exception) -> {
+                try {
+                    System.out.println("Exception %s".formatted(exception.toString()));
+                    return downloadAssetWithRetry(
+                        assetInfo,
+                        assetsObjectsDirectoryPath,
+                        attempt + 1,
+                        downloadedCounter
+                    );
+                } catch (Exception e) {
+                    System.out.println("Exception %s".formatted(e.toString()));
                     return CompletableFuture.failedFuture(e);
                 }
             });
     }
-
 }
 
 
