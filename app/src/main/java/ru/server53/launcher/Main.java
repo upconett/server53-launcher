@@ -1,5 +1,6 @@
 package ru.server53.launcher;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -20,12 +21,13 @@ public class Main {
         StartupManager.launch("NeoForge 1.21.1", "upconett");
     }
 
-    protected static void parseClientJson() throws Exception {
-        Path clientJsonPath = Paths.get(NeoForge_1_21_1_ClientJsonPath);
+    protected static void parseClientJson(Path clientJsonPath) throws Exception {
+        // Path clientJsonPath = Paths.get(NeoForge_1_21_1_ClientJsonPath);
         ClientJsonParser parser = new ClientJsonParser(clientJsonPath);
         ClientJson clientJson = parser.parse();
 
-        Path newGamePath = Paths.get("fastGame").toAbsolutePath();
+        Path newGamePath = Paths.get("minecraft").toAbsolutePath();
+        System.out.println("Downloading to '%s'".formatted(newGamePath));
 
         var cpb = new ClassPathBuilder(newGamePath, clientJson);
         String classPath = cpb.build(clientJson.libraries());
@@ -71,6 +73,15 @@ public class Main {
     // }
 
     public static void main(String[] args) throws Exception {
-        parseClientJson();
+        if (args.length < 1) {
+            System.out.println("Enter client.json path as first argument");
+        } else {
+            String clientJsonPathString = args[0];
+            var clientJsonPath = Paths.get(clientJsonPathString).toAbsolutePath();
+            if (Files.notExists(clientJsonPath)) {
+                System.out.println("File '%s' does not exist".formatted(clientJsonPath));
+            }
+            parseClientJson(clientJsonPath);
+        }
     }
 }

@@ -15,8 +15,7 @@ public class ClassPathBuilder {
     ClassPathBuilder(Path minecraftDirectory, ClientJson clientJson) throws IOException {
         Path MINECRAFT_DIRECTORY = minecraftDirectory
             .toAbsolutePath()
-            .normalize()
-            .toRealPath();
+            .normalize();
         LIBRARIES_PATH = MINECRAFT_DIRECTORY.resolve("libraries");
         CLASSPATH_SEPARATOR = OSUtils.isWindows() ? ";" : ":";
         VERSION_JAR_PATH = MINECRAFT_DIRECTORY.resolve("versions/%s/%s.jar".formatted(clientJson.id(), clientJson.id()));

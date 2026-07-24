@@ -11,7 +11,6 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.jar.JarEntry;
@@ -57,13 +56,13 @@ public class ResourceDownloader {
         System.out.println("Downloading assets:");
         downloadAssets(assetsDirectoryPath, yetToDownload);
 
-        // System.out.println("Downloading libraries:");
-        // Path libsDirectoryPath = downloadDirectory.resolve("libraries");
-        // downloadLibraries(libsDirectoryPath);
+        System.out.println("Downloading libraries:");
+        Path libsDirectoryPath = downloadDirectory.resolve("libraries");
+        downloadLibraries(libsDirectoryPath);
 
-        // System.out.println("Downloading client:");
-        // Path versionsDirectoryPath = downloadDirectory.resolve("versions");
-        // downloadClient(versionsDirectoryPath);
+        System.out.println("Downloading client:");
+        Path versionsDirectoryPath = downloadDirectory.resolve("versions");
+        downloadClient(versionsDirectoryPath);
 
         System.out.println("Unpacking natives:");
         unpackNatives(downloadDirectory);
@@ -85,7 +84,7 @@ public class ResourceDownloader {
             }
             if (libFilePath.getFileName().toString().contains("-natives-")) {
                 if (libFilePath.getFileName().toString().contains("arm64")) {
-                    System.out.println("Skip %s --> not arm64".formatted(libFilePath));
+                    System.out.println("Skip %s --> arm64".formatted(libFilePath));
                     continue;
                 }
                 System.out.println("Unpacking %s".formatted(libFilePath));

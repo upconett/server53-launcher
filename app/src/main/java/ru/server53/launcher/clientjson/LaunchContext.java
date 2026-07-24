@@ -46,8 +46,7 @@ public record LaunchContext (
         var MINECRAFT_VERSION = clientJson.id();
         var MINECRAFT_DIRECTORY = minecraftDirectory
             .toAbsolutePath()
-            .normalize()
-            .toRealPath();
+            .normalize();
 
         var ALL_VERSIONS_PATH = MINECRAFT_DIRECTORY.resolve("versions");
         var VERSION_PATH = ALL_VERSIONS_PATH.resolve(MINECRAFT_VERSION);
