@@ -14,6 +14,8 @@ import org.json.JSONObject;
 
 
 public class ClientJsonParser {
+    private static final String LLAUNCH_URL = "https://repo.llaun.ch";
+
     private final Path clientJsonPath;
 
     private JSONObject rawClientJson;
@@ -29,6 +31,7 @@ public class ClientJsonParser {
     public ClientJson parse() throws IOException, URISyntaxException {
         this.rawClientJson = new JSONObject(Files.readString(clientJsonPath));
 
+        String id = rawClientJson.getString("id");
         String clientType = rawClientJson.getString("type");
         String mainClass = rawClientJson.getString("mainClass");
         String assets = rawClientJson.getString("assets");
@@ -49,6 +52,7 @@ public class ClientJsonParser {
         int javaMajorVersion = javaVersionJSON.getInt("majorVersion");
 
         return new ClientJson(
+            id,
             clientType,
             mainClass,
             libraries,
@@ -101,6 +105,9 @@ public class ClientJsonParser {
 
     private DownloadInfo parseDownload(JSONObject raw) throws URISyntaxException {
         String url = raw.getString("url");
+        if (url.startsWith("/")) {
+            url = LLAUNCH_URL + url;
+        }
         String sha1 = raw.getString("sha1");
         Long size = raw.getLong("size");
         return new DownloadInfo(url, sha1, size);

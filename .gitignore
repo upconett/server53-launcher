@@ -16,6 +16,7 @@ build
 bullshit/
 minecraft-maybe-required-data/
 newGame/
+fastGame/
 
 
 # Ignore logs

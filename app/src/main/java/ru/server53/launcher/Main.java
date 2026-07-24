@@ -5,7 +5,8 @@ import java.nio.file.Paths;
 
 import ru.server53.launcher.clientjson.ClientJson;
 import ru.server53.launcher.clientjson.ClientJsonParser;
-import ru.server53.launcher.downloads.AssetDownloader;
+import ru.server53.launcher.clientjson.LaunchContext;
+import ru.server53.launcher.downloads.ResourceDownloader;
 import ru.server53.launcher.downloads.DownloadManager;
 
 public class Main {
@@ -24,12 +25,31 @@ public class Main {
         ClientJsonParser parser = new ClientJsonParser(clientJsonPath);
         ClientJson clientJson = parser.parse();
 
+        Path newGamePath = Paths.get("fastGame").toAbsolutePath();
+
+        var cpb = new ClassPathBuilder(newGamePath, clientJson);
+        String classPath = cpb.build(clientJson.libraries());
+
+        String USERNAME = "upconett";
+        String UUID = "82d680cb-867f-49b1-84bd-b4a7b85971d8";
+        String ACCESS_TOKEN = "";
+
+        var context = LaunchContext.ofDefaultValues(
+            USERNAME,
+            UUID,
+            ACCESS_TOKEN,
+            classPath,
+            newGamePath,
+            clientJson
+        );
+
         DownloadManager downloadManager = DownloadManager.ofDefaultConfiguration();
-        AssetDownloader assetDownloader = new AssetDownloader(clientJson, downloadManager);
+        ResourceDownloader resourceDownloader = new ResourceDownloader(downloadManager, clientJson, context);
 
-        Path newGamePath = Paths.get("fastGame");
+        resourceDownloader.downloadGame(newGamePath);
 
-        assetDownloader.downloadGameTo(newGamePath);
+        var launchManager = new LaunchManager(newGamePath, USERNAME, UUID, ACCESS_TOKEN, clientJson, context);
+        launchManager.launchGame();
     }
 
     // protected static void oldCrap() throws Exception {

@@ -1,42 +1,202 @@
 package ru.server53.launcher.downloads;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 import ru.server53.launcher.clientjson.AssetIndexInfo;
 import ru.server53.launcher.clientjson.ClientJson;
+import ru.server53.launcher.clientjson.DownloadInfo;
+import ru.server53.launcher.clientjson.LaunchContext;
+import ru.server53.launcher.clientjson.LibraryInfo;
 
 
-public class AssetDownloader {
-    private final ClientJson clientJson;
-    private final String ASSETS_DOWNLOAD_URL = "https://resources.download.minecraft.net";
+public class ResourceDownloader {
+    private static final String ASSETS_DOWNLOAD_URL = "https://resources.download.minecraft.net";
+
     private final DownloadManager downloadManager;
+    private final ClientJson clientJson;
+    private final LaunchContext context;
 
     private final int MAX_RETRIES = 5;
 
-    public AssetDownloader(
+    public ResourceDownloader(
+        DownloadManager downloadManager,
         ClientJson clientJson,
-        DownloadManager downloadManager
+        LaunchContext context
     ) {
-        this.clientJson = clientJson;
         this.downloadManager = downloadManager;
+        this.clientJson = clientJson;
+        this.context = context;
     }
 
-    public Path downloadGameTo(Path downloadDirectory) throws IOException, InterruptedException, URISyntaxException {
+    public Path downloadGame(Path downloadDirectory) throws IOException, InterruptedException, URISyntaxException {
         Path assetsDirectoryPath = downloadDirectory.resolve("assets");
+
+        System.out.println("Downloading asset index:");
         Path assetIndexJsonPath = downloadAssetIndex(assetsDirectoryPath);
+
         Map<String, AssetInfo> assetsInfo = AssetIndexParser.parse(assetIndexJsonPath);
+
+        System.out.println("Checking assets:");
         var yetToDownload = checkAssets(assetsDirectoryPath, assetsInfo);
+
+        System.out.println("Downloading assets:");
         downloadAssets(assetsDirectoryPath, yetToDownload);
+
+        // System.out.println("Downloading libraries:");
+        // Path libsDirectoryPath = downloadDirectory.resolve("libraries");
+        // downloadLibraries(libsDirectoryPath);
+
+        // System.out.println("Downloading client:");
+        // Path versionsDirectoryPath = downloadDirectory.resolve("versions");
+        // downloadClient(versionsDirectoryPath);
+
+        System.out.println("Unpacking natives:");
+        unpackNatives(downloadDirectory);
+
         return downloadDirectory;
+    }
+
+    private void unpackNatives(Path downloadDirectory) throws IOException {
+        Path libsDirectoryPath = downloadDirectory.resolve("libraries");
+        Path versionsDirectoryPath = downloadDirectory.resolve("versions");
+        Path clientDirectoryPath = versionsDirectoryPath.resolve(clientJson.id());
+        Path nativesDirectoryPath = clientDirectoryPath.resolve("natives");
+        
+        for (LibraryInfo lib : clientJson.libraries()) {
+            if (!lib.isAllowed(context)) { continue; }
+            Path libFilePath = getLibPath(libsDirectoryPath, lib);
+            if (Files.notExists(libFilePath)) {
+                throw new IOException("Natives lib '%s' does not exist, but required".formatted(libFilePath));
+            }
+            if (libFilePath.getFileName().toString().contains("-natives-")) {
+                if (libFilePath.getFileName().toString().contains("arm64")) {
+                    System.out.println("Skip %s --> not arm64".formatted(libFilePath));
+                    continue;
+                }
+                System.out.println("Unpacking %s".formatted(libFilePath));
+                unpackNative(libFilePath, nativesDirectoryPath);
+            }
+        }
+
+    }
+
+    private void unpackNative(Path libPath, Path nativesDirectoryPath) throws IOException {
+        try (JarFile jar = new JarFile(libPath.toFile())) {
+            Enumeration<JarEntry> entries = jar.entries();
+            while (entries.hasMoreElements()) {
+                JarEntry entry = entries.nextElement();
+                
+                // Skip directories and non-native files
+                if (entry.isDirectory()) continue;
+                if (!shouldExtract(entry.getName())) continue;
+                
+                // Extract the file
+                Path entryPath = Paths.get(entry.getName());
+                Path target = nativesDirectoryPath.resolve(entryPath.getFileName());
+                Files.createDirectories(target.getParent());
+                System.out.println("- %s".formatted(target));
+                
+                try (InputStream in = jar.getInputStream(entry)) {
+                    Files.copy(in, target);
+                }
+                
+                // Make executable on Linux/Mac
+                if (!context.isWindows()) {
+                    target.toFile().setExecutable(true);
+                }
+            }
+        }
+    }
+
+    public boolean shouldExtract(String fileName) {
+        String lower = fileName.toLowerCase();
+        if (context.isWindows()) {
+            return lower.endsWith(".dll");
+        } else if (context.isMac()) {
+            return lower.endsWith(".dylib") || lower.endsWith(".jnilib");
+        } else if (context.isLinux()) {
+            return lower.endsWith(".so");
+        }
+        return false;
+    }
+
+    private Path downloadClient(Path versionsDirectoryPath) throws IOException {
+        Path clientDirectoryPath = versionsDirectoryPath.resolve(clientJson.id());
+        Path clientPath = clientDirectoryPath.resolve(clientJson.id()+".jar");
+
+        Files.createDirectories(clientDirectoryPath);
+
+        DownloadInfo clientDownload = clientJson.downloads().get("client");
+
+        System.out.println("Downloading %s".formatted(clientDownload.url));
+        downloadManager.downloadFile(clientDownload.url, clientPath).join();
+        System.out.println("Done");
+        
+        return clientPath;
+    }
+
+    private void downloadLibraries(Path libsDirectoryPath) throws IOException, InterruptedException, URISyntaxException {
+        Files.createDirectories(libsDirectoryPath);
+
+        var futures = new ArrayList<CompletableFuture<HttpResponse<Path>>>();
+        for (LibraryInfo lib : clientJson.libraries()) {
+            if (!lib.isAllowed(context)) {
+                System.out.println("⚠️ Skipping %s".formatted(lib.name));
+                continue;
+            }
+            URI downloadURI = lib.download.url;
+            Path libFilePath = getLibPath(libsDirectoryPath, lib);
+            System.out.println(libFilePath.toString() + " " + downloadURI.toString());
+            Files.createDirectories(libFilePath.getParent());
+            futures.add(downloadManager.downloadFile(downloadURI, libFilePath));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    }
+
+    private Path getLibPath(Path libsDirectoryPath, LibraryInfo lib) {
+        StringBuilder sb = new StringBuilder("");
+
+        String[] packageNameVersion = lib.name.split(":", 4);
+
+        String _package = packageNameVersion[0];
+        String[] packageParts = _package.split("\\.");
+        String _name = packageNameVersion[1];
+        String _version = packageNameVersion[2];
+
+        for (String part : packageParts) {
+            sb.append(part);
+            sb.append("/");
+        }
+        sb.append(_name);
+        sb.append("/");
+        sb.append(_version);
+        sb.append("/");
+        sb.append(_name);
+        sb.append("-");
+        sb.append(_version);
+
+        if (packageNameVersion.length > 3) {
+            sb.append("-");
+            sb.append(packageNameVersion[3]);
+        }
+        sb.append(".jar");
+
+        return libsDirectoryPath.resolve(sb.toString());
     }
 
     private Path downloadAssetIndex(Path assetsDirectoryPath) throws IOException, InterruptedException {

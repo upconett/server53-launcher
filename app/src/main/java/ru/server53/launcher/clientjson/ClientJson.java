@@ -3,6 +3,7 @@ package ru.server53.launcher.clientjson;
 import java.util.Map;
 
 public record ClientJson(
+    String id,
     String type,
     String mainClass,
     LibraryInfo[] libraries,

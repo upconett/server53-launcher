@@ -9,6 +9,6 @@ public class OSRule implements AllowanceRule {
 
     @Override
     public boolean allows(LaunchContext context) {
-        return this.os == context.os();
+        return this.os.equals(context.os());
     }
 }
