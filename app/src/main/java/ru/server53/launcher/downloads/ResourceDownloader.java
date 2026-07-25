@@ -16,6 +16,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
+import ru.server53.launcher.MinecraftPathsBuilder;
+import ru.server53.launcher.NativeLibUtils;
 import ru.server53.launcher.clientjson.AssetIndexInfo;
 import ru.server53.launcher.clientjson.ClientJson;
 import ru.server53.launcher.clientjson.DownloadInfo;
@@ -28,6 +30,7 @@ public class ResourceDownloader {
 
     private final DownloadManager downloadManager;
     private final ClientJson clientJson;
+    private final MinecraftPathsBuilder pathBuilder;
     private final LaunchContext context;
 
     private final int MAX_RETRIES = 5;
@@ -35,63 +38,47 @@ public class ResourceDownloader {
     public ResourceDownloader(
         DownloadManager downloadManager,
         ClientJson clientJson,
+        MinecraftPathsBuilder pathBuilder,
         LaunchContext context
     ) {
         this.downloadManager = downloadManager;
         this.clientJson = clientJson;
+        this.pathBuilder = pathBuilder;
         this.context = context;
     }
 
-    public Path downloadGame(Path downloadDirectory) throws IOException, InterruptedException, URISyntaxException {
-        Path assetsDirectoryPath = downloadDirectory.resolve("assets");
-
+    public void downloadGame() throws IOException, InterruptedException, URISyntaxException {
         System.out.println("Downloading asset index:");
-        Path assetIndexJsonPath = downloadAssetIndex(assetsDirectoryPath);
+        Path assetIndexJsonPath = downloadAssetIndex();
 
         Map<String, AssetInfo> assetsInfo = AssetIndexParser.parse(assetIndexJsonPath);
 
-        System.out.println("Checking assets:");
-        var yetToDownload = checkAssets(assetsDirectoryPath, assetsInfo);
-
         System.out.println("Downloading assets:");
-        downloadAssets(assetsDirectoryPath, yetToDownload);
+        downloadAssets(assetsInfo);
 
         System.out.println("Downloading libraries:");
-        Path libsDirectoryPath = downloadDirectory.resolve("libraries");
-        downloadLibraries(libsDirectoryPath);
+        downloadLibraries();
 
         System.out.println("Downloading client:");
-        Path versionsDirectoryPath = downloadDirectory.resolve("versions");
-        downloadClient(versionsDirectoryPath);
+        downloadClientJar();
 
         System.out.println("Unpacking natives:");
-        unpackNatives(downloadDirectory);
-
-        return downloadDirectory;
+        unpackNatives();
     }
 
-    private void unpackNatives(Path downloadDirectory) throws IOException {
-        Path libsDirectoryPath = downloadDirectory.resolve("libraries");
-        Path versionsDirectoryPath = downloadDirectory.resolve("versions");
-        Path clientDirectoryPath = versionsDirectoryPath.resolve(clientJson.id());
-        Path nativesDirectoryPath = clientDirectoryPath.resolve("natives");
-        
+    private void unpackNatives() throws IOException {
+        Path nativesDirectory = pathBuilder.getNativesDirectory(clientJson.id());
         for (LibraryInfo lib : clientJson.libraries()) {
             if (!lib.isAllowed(context)) { continue; }
-            Path libFilePath = getLibPath(libsDirectoryPath, lib);
+            Path libFilePath = pathBuilder.getLibraryPath(lib);
             if (Files.notExists(libFilePath)) {
                 throw new IOException("Natives lib '%s' does not exist, but required".formatted(libFilePath));
             }
-            if (libFilePath.getFileName().toString().contains("-natives-")) {
-                if (libFilePath.getFileName().toString().contains("arm64")) {
-                    System.out.println("Skip %s --> arm64".formatted(libFilePath));
-                    continue;
-                }
+            if (NativeLibUtils.isSuitableNativeLib(lib, context)) { 
                 System.out.println("Unpacking %s".formatted(libFilePath));
-                unpackNative(libFilePath, nativesDirectoryPath);
+                unpackNative(libFilePath, nativesDirectory);
             }
         }
-
     }
 
     private void unpackNative(Path libPath, Path nativesDirectoryPath) throws IOException {
@@ -108,6 +95,7 @@ public class ResourceDownloader {
                 Path entryPath = Paths.get(entry.getName());
                 Path target = nativesDirectoryPath.resolve(entryPath.getFileName());
                 Files.createDirectories(target.getParent());
+                Files.deleteIfExists(target);
                 System.out.println("- %s".formatted(target));
                 
                 try (InputStream in = jar.getInputStream(entry)) {
@@ -134,32 +122,31 @@ public class ResourceDownloader {
         return false;
     }
 
-    private Path downloadClient(Path versionsDirectoryPath) throws IOException {
-        Path clientDirectoryPath = versionsDirectoryPath.resolve(clientJson.id());
-        Path clientPath = clientDirectoryPath.resolve(clientJson.id()+".jar");
+    private void downloadClientJar() throws IOException {
+        Path clientPath = pathBuilder.getVersionJarPath(clientJson.id());
 
-        Files.createDirectories(clientDirectoryPath);
+        Files.createDirectories(clientPath.getParent());
+        if (Files.exists(clientPath)) { return; } // TODO: add size + sha1 checking
 
         DownloadInfo clientDownload = clientJson.downloads().get("client");
 
         System.out.println("Downloading %s".formatted(clientDownload.url));
         downloadManager.downloadFile(clientDownload.url, clientPath).join();
         System.out.println("Done");
-        
-        return clientPath;
     }
 
-    private void downloadLibraries(Path libsDirectoryPath) throws IOException, InterruptedException, URISyntaxException {
-        Files.createDirectories(libsDirectoryPath);
-
+    private void downloadLibraries() 
+    throws IOException, InterruptedException, URISyntaxException
+    {
+        LibraryInfo[] yetToDownload = checkLibraries();
         var futures = new ArrayList<CompletableFuture<HttpResponse<Path>>>();
-        for (LibraryInfo lib : clientJson.libraries()) {
+        for (LibraryInfo lib : yetToDownload) {
             if (!lib.isAllowed(context)) {
                 System.out.println("⚠️ Skipping %s".formatted(lib.name));
                 continue;
             }
             URI downloadURI = lib.download.url;
-            Path libFilePath = getLibPath(libsDirectoryPath, lib);
+            Path libFilePath = pathBuilder.getLibraryPath(lib);
             System.out.println(libFilePath.toString() + " " + downloadURI.toString());
             Files.createDirectories(libFilePath.getParent());
             futures.add(downloadManager.downloadFile(downloadURI, libFilePath));
@@ -167,48 +154,30 @@ public class ResourceDownloader {
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
     }
 
-    private Path getLibPath(Path libsDirectoryPath, LibraryInfo lib) {
-        StringBuilder sb = new StringBuilder("");
-
-        String[] packageNameVersion = lib.name.split(":", 4);
-
-        String _package = packageNameVersion[0];
-        String[] packageParts = _package.split("\\.");
-        String _name = packageNameVersion[1];
-        String _version = packageNameVersion[2];
-
-        for (String part : packageParts) {
-            sb.append(part);
-            sb.append("/");
+    private LibraryInfo[] checkLibraries() {
+        var yetToDownload = new ArrayList<LibraryInfo>();
+        for (LibraryInfo lib : clientJson.libraries()) {
+            if (!lib.isAllowed(context)) { continue; }
+            Path libFilePath = pathBuilder.getLibraryPath(lib);
+            if (Files.exists(libFilePath)) { continue; }  // TODO: add size + sha1 checking
+            yetToDownload.add(lib);
         }
-        sb.append(_name);
-        sb.append("/");
-        sb.append(_version);
-        sb.append("/");
-        sb.append(_name);
-        sb.append("-");
-        sb.append(_version);
-
-        if (packageNameVersion.length > 3) {
-            sb.append("-");
-            sb.append(packageNameVersion[3]);
-        }
-        sb.append(".jar");
-
-        return libsDirectoryPath.resolve(sb.toString());
+        return yetToDownload.toArray(LibraryInfo[]::new);
     }
 
-    private Path downloadAssetIndex(Path assetsDirectoryPath) throws IOException, InterruptedException {
+
+    private Path downloadAssetIndex()
+    throws IOException, InterruptedException
+    {
         AssetIndexInfo assetIndex = clientJson.assetIndex();
-
-        Path assetsIndexesPath = assetsDirectoryPath.resolve("indexes");
-        Path assetIndexJsonPath = assetsIndexesPath.resolve("%s.json".formatted(assetIndex.id));
-
-        Files.createDirectories(assetsIndexesPath);
-
+        Path assetIndexJsonPath = pathBuilder.getAssetsIndexPath(assetIndex.id);
         URI downloadURL = assetIndex.download.url;
 
-        Files.deleteIfExists(assetIndexJsonPath);
+        // TODO: add size + sha1 checking
+        if (Files.exists(assetIndexJsonPath)) {
+            return assetIndexJsonPath;
+        }
+        Files.createDirectories(assetIndexJsonPath.getParent());
 
         System.out.println("Downloading '%s'...    ".formatted(assetIndexJsonPath.toString()));
         downloadManager.downloadFile(downloadURL, assetIndexJsonPath).join();
@@ -217,23 +186,24 @@ public class ResourceDownloader {
         return assetIndexJsonPath;
     }
 
-    private Map<String, AssetInfo> checkAssets(Path assetsDirectoryPath, Map<String, AssetInfo> assetsInfo) throws IOException {
+    private Map<String, AssetInfo> checkAssets(Map<String, AssetInfo> assetsInfo) 
+    throws IOException
+    {
         Map<String, AssetInfo> notPresentedMap = new HashMap<>();
         notPresentedMap.putAll(assetsInfo);
 
-        Path assetsObjectsDirectoryPath = assetsDirectoryPath.resolve("objects");
-        Files.createDirectories(assetsObjectsDirectoryPath);
+        Path assetsObjectsDirectory = pathBuilder.getAssetsObjectsDirectory();
+        Files.createDirectories(assetsObjectsDirectory);
+
         int total = assetsInfo.size();
         int notPresented = 0;
 
         for (var entry : assetsInfo.entrySet()) {
             AssetInfo assetInfo = entry.getValue();
-            String assetSubdirectory = assetInfo.hash().substring(0, 2);
-            Path assetSubdirectoryPath = assetsObjectsDirectoryPath.resolve(assetSubdirectory);
-            Path assetPath = assetSubdirectoryPath.resolve(assetInfo.hash());
+            Path assetPath = pathBuilder.getAssetPath(assetInfo);
             if (!Files.exists(assetPath)) {
                 notPresented++;
-                System.out.println( "Not presented '%s'".formatted(assetInfo.hash()));
+                System.out.println( "Not presented '%s'".formatted(assetInfo.hash()));  // TODO: add size + sha1 checking
             } else {
                 notPresentedMap.remove(entry.getKey());
             }
@@ -242,14 +212,18 @@ public class ResourceDownloader {
         return notPresentedMap;
     }
     
-    private void downloadAssets(Path assetsDirectoryPath, Map<String, AssetInfo> assetsInfo) throws IOException, URISyntaxException, InterruptedException {
-        Path assetsObjectsDirectoryPath = assetsDirectoryPath.resolve("objects");
-        Files.createDirectories(assetsObjectsDirectoryPath);
-
-        var downloadedCounter = new DownloadCounter(assetsInfo.size());
+    private void downloadAssets(Map<String, AssetInfo> assetsInfo) 
+    throws IOException, URISyntaxException, InterruptedException
+    {
+        Map<String, AssetInfo> yetToDownload = checkAssets(assetsInfo);
+        var downloadedCounter = new DownloadCounter(yetToDownload.size());
         var futures = new ArrayList<CompletableFuture<HttpResponse<Path>>>();
-        for (AssetInfo assetInfo : assetsInfo.values()) {
-            futures.add(downloadAssetWithRetry(assetInfo, assetsObjectsDirectoryPath, 0, downloadedCounter));
+        for (AssetInfo assetInfo : yetToDownload.values()) {
+            futures.add(downloadAssetWithRetry(
+                assetInfo,
+                0, 
+                downloadedCounter
+            ));
         }
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
     }
@@ -257,26 +231,24 @@ public class ResourceDownloader {
 
     private CompletableFuture<HttpResponse<Path>> downloadAssetWithRetry(
         AssetInfo assetInfo,
-        Path assetsObjectsDirectoryPath,
         int attempt,
         DownloadCounter downloadedCounter
     ) throws IOException, URISyntaxException, InterruptedException {
-
         if (attempt >= MAX_RETRIES) {
             System.out.println("Reached MAX_RETRIES");
             return CompletableFuture.failedFuture(new RuntimeException("Hit MAX_RETRIES"));
         }
 
-        String assetSubdirectory = assetInfo.hash().substring(0, 2);
-        Path assetSubdirectoryPath = assetsObjectsDirectoryPath.resolve(assetSubdirectory);
-        Path assetPath = assetSubdirectoryPath.resolve(assetInfo.hash());
+        Path assetPath = pathBuilder.getAssetPath(assetInfo);
 
-        Files.createDirectories(assetSubdirectoryPath);
+        Files.createDirectories(assetPath.getParent());
         Files.deleteIfExists(assetPath);
 
-        String assetURLPath = "%s/%s".formatted(assetSubdirectory, assetInfo.hash());
+        String assetURLPath = "%s/%s".formatted(assetPath.getParent().getFileName(), assetInfo.hash());
         URI downloadURI = new URI(ASSETS_DOWNLOAD_URL).resolve(assetURLPath);
+        System.out.println(downloadURI);
 
+        // TODO: move retries to download manager
         return downloadManager.downloadFile(downloadURI, assetPath)
             .thenCompose((response) -> {
                 try {
@@ -284,9 +256,15 @@ public class ResourceDownloader {
                         && Files.size(assetPath) == assetInfo.size()
                     ) {
                         downloadedCounter.increment();
-                        System.out.println("%d/%d, %s".formatted(downloadedCounter.getCurrent(), downloadedCounter.getTotal(), response.toString()));
+                        System.out.println(
+                            "%d/%d, %s".formatted(
+                                downloadedCounter.getCurrent(),
+                                downloadedCounter.getTotal(),
+                                response.toString()
+                            ));
                         return CompletableFuture.completedFuture(response);
                     } else {
+                        System.out.println(response.statusCode());
                         System.out.println("Invalid file size");
                         return CompletableFuture.failedFuture(new Exception("Invalid File Size"));
                     }
@@ -300,7 +278,6 @@ public class ResourceDownloader {
                     System.out.println("Exception %s".formatted(exception.toString()));
                     return downloadAssetWithRetry(
                         assetInfo,
-                        assetsObjectsDirectoryPath,
                         attempt + 1,
                         downloadedCounter
                     );

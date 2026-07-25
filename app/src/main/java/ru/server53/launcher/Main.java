@@ -10,6 +10,7 @@ import ru.server53.launcher.clientjson.LaunchContext;
 import ru.server53.launcher.downloads.ResourceDownloader;
 import ru.server53.launcher.downloads.DownloadManager;
 
+
 public class Main {
     private final static String NeoForge_1_21_1_ClientJsonPath = "/Users/upco/Documents/projects/minecraft/Server53Launcher/minecraft-maybe-required-data/versions/NeoForge 1.21.1/NeoForge 1.21.1.json";
 
@@ -22,15 +23,15 @@ public class Main {
     }
 
     protected static void parseClientJson(Path clientJsonPath) throws Exception {
-        // Path clientJsonPath = Paths.get(NeoForge_1_21_1_ClientJsonPath);
         ClientJsonParser parser = new ClientJsonParser(clientJsonPath);
         ClientJson clientJson = parser.parse();
 
-        Path newGamePath = Paths.get("minecraft").toAbsolutePath();
-        System.out.println("Downloading to '%s'".formatted(newGamePath));
+        var pathBuilder = new MinecraftPathsBuilder("minecraft");
 
-        var cpb = new ClassPathBuilder(newGamePath, clientJson);
-        String classPath = cpb.build(clientJson.libraries());
+        System.out.println("Downloading to '%s'".formatted(pathBuilder.getRootDirectory()));
+
+        var classPathBuilder = new ClassPathBuilder(clientJson, pathBuilder);
+        String classPath = classPathBuilder.build(clientJson.libraries());
 
         String USERNAME = "upconett";
         String UUID = "82d680cb-867f-49b1-84bd-b4a7b85971d8";
@@ -41,47 +42,36 @@ public class Main {
             UUID,
             ACCESS_TOKEN,
             classPath,
-            newGamePath,
+            pathBuilder,
             clientJson
         );
 
         DownloadManager downloadManager = DownloadManager.ofDefaultConfiguration();
-        ResourceDownloader resourceDownloader = new ResourceDownloader(downloadManager, clientJson, context);
+        ResourceDownloader resourceDownloader = new ResourceDownloader(
+            downloadManager,
+            clientJson,
+            pathBuilder,
+            context
+        );
 
-        resourceDownloader.downloadGame(newGamePath);
-
-        var launchManager = new LaunchManager(newGamePath, USERNAME, UUID, ACCESS_TOKEN, clientJson, context);
+        resourceDownloader.downloadGame();
+        var launchManager = new LaunchManager(clientJson, context);
         launchManager.launchGame();
     }
 
-    // protected static void oldCrap() throws Exception {
-    //     String uuid = UUID.randomUUID().toString();
-    //     VersionInfoParser parser = new VersionInfoParser(
-    //         // "/Users/upco/Documents/projects/minecraft/Server53Launcher/minecraft-maybe-required-data",
-    //         "/Users/upco/minecraft-test",
-    //         "OptiFine 1.12.2",
-    //         "upconett", 
-    //         uuid,
-    //         ""
-    //     );
-    //     String[] command = parser.parse();
-    //     for (String arg : command) System.out.print("\""+arg+"\" ");
-    //     System.out.println();
-    //     ProcessBuilder pb = new ProcessBuilder(command);
-    //     pb.inheritIO();
-    //     pb.start();
-    // }
-
     public static void main(String[] args) throws Exception {
-        if (args.length < 1) {
-            System.out.println("Enter client.json path as first argument");
-        } else {
-            String clientJsonPathString = args[0];
-            var clientJsonPath = Paths.get(clientJsonPathString).toAbsolutePath();
+        Path clientJsonPath = Paths.get(NeoForge_1_21_1_ClientJsonPath);
+        if (args.length < 1) { 
             if (Files.notExists(clientJsonPath)) {
-                System.out.println("File '%s' does not exist".formatted(clientJsonPath));
+                System.out.println("Enter client.json path as first argument");
+                return;
             }
-            parseClientJson(clientJsonPath);
+        } else {
+            clientJsonPath = Paths.get(args[0]).toAbsolutePath();
         }
+        if (Files.notExists(clientJsonPath)) {
+            System.out.println("File '%s' does not exist".formatted(clientJsonPath));
+        }
+        parseClientJson(clientJsonPath);
     }
 }

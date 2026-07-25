@@ -6,6 +6,11 @@ public class LibraryInfo implements RuleControlled {
     public final Boolean downloadOnly;
     public final DownloadInfo download;
 
+    public final String groupId;
+    public final String artifactId;
+    public final String version;
+    public final String classifier;
+
     private final RuleChecker ruleChecker;
 
 
@@ -16,6 +21,17 @@ public class LibraryInfo implements RuleControlled {
         AllowanceRule[] rules
     ) {
         this.name = name;
+
+        var nameParts = name.split(":", 4);
+        if (nameParts.length < 3) {
+            throw new IllegalArgumentException("Invalid library name: " + name);
+        }
+
+        this.groupId = nameParts[0];
+        this.artifactId = nameParts[1];
+        this.version = nameParts[2];
+        this.classifier = (nameParts.length > 3) ? nameParts[3] : "";
+
         this.downloadOnly = downloadOnly;
         this.download = download;
         this.ruleChecker = new RuleChecker(rules);
@@ -24,39 +40,4 @@ public class LibraryInfo implements RuleControlled {
     public boolean isAllowed(LaunchContext context) {
         return ruleChecker.checkAllowance(context);
     }
-
-    // ##############################
-    // REALLY IMPORTANT, DO NOT ERASE
-    // ##############################
-    // 
-    // public static String nameToPath(String name) {
-    //     StringBuilder sb = new StringBuilder("");
-
-    //     String[] packageNameVersion = name.split(":", 4);
-
-    //     String _package = packageNameVersion[0];
-    //     String[] packageParts = _package.split("\\.");
-    //     String _name = packageNameVersion[1];
-    //     String _version = packageNameVersion[2];
-
-    //     for (String part : packageParts) {
-    //         sb.append(part);
-    //         sb.append("/");
-    //     }
-    //     sb.append(_name);
-    //     sb.append("/");
-    //     sb.append(_version);
-    //     sb.append("/");
-    //     sb.append(_name);
-    //     sb.append("-");
-    //     sb.append(_version);
-
-    //     if (packageNameVersion.length > 3) {
-    //         sb.append("-");
-    //         sb.append(packageNameVersion[3]);
-    //     }
-    //     sb.append(".jar");
-
-    //     return sb.toString();
-    // }
 }

@@ -1,25 +1,16 @@
 package ru.server53.launcher.clientjson;
 
 import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
+import ru.server53.launcher.MinecraftPathsBuilder;
 import ru.server53.launcher.OSUtils;
 
-//     IMPORTANT
-//
-//     Map<String, Boolean> possibleFeatures = new HashMap<>();
-//     possibleFeatures.put("is_demo_user", false);
-//     possibleFeatures.put("has_custom_resolution", false);
-//     possibleFeatures.put("has_quick_plays_support", false);
-//     possibleFeatures.put("has_quick_play_singleplayer", false);
-//     possibleFeatures.put("has_quick_play_multiplayer", false);
-//     possibleFeatures.put("has_quick_play_realms", false);
 
 public record LaunchContext (
     String os,
+    String osArch,
     Map<String, Boolean> features,
     Map<String, String> otherArgs
 ){
@@ -28,11 +19,11 @@ public record LaunchContext (
         String uuid, 
         String accessToken,
         String classPath,
-        Path minecraftDirectory,
+        MinecraftPathsBuilder pathBuilder,
         ClientJson clientJson
     ) throws IOException {
         String os = OSUtils.getOS();
-        String osWithArch = OSUtils.getOSWithArch();
+        String osArch = OSUtils.getOSArch();
 
         var features = new HashMap<String, Boolean>();
         features.put("is_demo_user", false);
@@ -44,16 +35,11 @@ public record LaunchContext (
 
 
         var MINECRAFT_VERSION = clientJson.id();
-        var MINECRAFT_DIRECTORY = minecraftDirectory
-            .toAbsolutePath()
-            .normalize();
+        var MINECRAFT_DIRECTORY = pathBuilder.getRootDirectory();
 
-        var ALL_VERSIONS_PATH = MINECRAFT_DIRECTORY.resolve("versions");
-        var VERSION_PATH = ALL_VERSIONS_PATH.resolve(MINECRAFT_VERSION);
-        var VERSION_JAR_PATH = VERSION_PATH.resolve(MINECRAFT_VERSION+".jar");
-        var NATIVES_PATH = VERSION_PATH.resolve("natives");
-        var ASSETS_PATH = MINECRAFT_DIRECTORY.resolve("assets");
-        var LIBRARIES_PATH = MINECRAFT_DIRECTORY.resolve("libraries");
+        var NATIVES_PATH = pathBuilder.getNativesDirectory(MINECRAFT_VERSION);
+        var ASSETS_PATH = pathBuilder.getAssetsRootDirectory();
+        var LIBRARIES_PATH = pathBuilder.getLibrariesDirectory();
 
         var CLASSPATH_SEPARATOR = OSUtils.isWindows() ? ";" : ":";
 
@@ -82,7 +68,7 @@ public record LaunchContext (
         otherArgs.put("resolution_width", "");
         otherArgs.put("resolution_height", "");
 
-        return new LaunchContext(os, features, otherArgs);
+        return new LaunchContext(os, osArch, features, otherArgs);
     }
 
     public Map<String, Object> getArgumentsForSubstitution() {
